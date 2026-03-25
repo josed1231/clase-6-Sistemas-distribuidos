@@ -1,35 +1,34 @@
 import asyncio
-import httpx
 
-# El semáforo deja pasar a 5 personas a la vez
+# Datos globales (El "Hotel")
+habitaciones = 8
+lock = asyncio.Lock()
 semaforo = asyncio.Semaphore(5)
 
-async def hacer_reserva(numero_cliente, cliente_http):
-    # Hacemos fila con el semáforo
+async def proceso_reserva(id_cliente):
+    global habitaciones
+    
+    # El semáforo controla el flujo de entrada (Máximo 5 a la vez)
     async with semaforo:
-        try:
-            respuesta = await cliente_http.get("http://127.0.0.1:8000/reservar")
-            datos = respuesta.json()
-            print(f"Cliente {numero_cliente}: {datos['mensaje']}")
-        except Exception as e:
-            print(f"Cliente {numero_cliente}: Error al conectar")
+        # El lock protege el dato para que no haya sobreventa
+        async with lock:
+            if habitaciones > 0:
+                await asyncio.sleep(0.2) # Simula proceso lento
+                habitaciones -= 1
+                print(f"Cliente {id_cliente}: ¡Reserva exitosa!")
+            else:
+                print(f"Cliente {id_cliente}: Lo siento, no hay cupo.")
 
 async def main():
-    # Primero reiniciamos para empezar en limpio con 8 habitaciones
-    async with httpx.AsyncClient() as cliente_http:
-        await cliente_http.post("http://127.0.0.1:8000/reiniciar")
+    print(f"--- Iniciando reservas. Disponibles: {habitaciones} ---")
+    
+    # Creamos los 30 clientes
+    tareas = [proceso_reserva(i) for i in range(1, 31)]
+    
+    # Ejecutamos todo
+    await asyncio.gather(*tareas)
+    
+    print(f"--- Proceso terminado. Quedaron: {habitaciones} habitaciones ---")
 
-    # Lanzamos las 30 peticiones
-    async with httpx.AsyncClient(timeout=15.0) as cliente_http:
-        # Preparamos a los 30 clientes
-        tareas = [hacer_reserva(i, cliente_http) for i in range(1, 31)]
-        # Los mandamos todos a la vez
-        await asyncio.gather(*tareas)
-
-    # Consultamos cómo quedó todo al final
-    async with httpx.AsyncClient() as cliente_http:
-        respuesta_final = await cliente_http.get("http://127.0.0.1:8000/estado")
-        datos = respuesta_final.json()
-        print(f"\nHabitaciones disponibles al final: {datos['disponibles']}")
-
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
